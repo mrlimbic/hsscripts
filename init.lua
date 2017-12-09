@@ -39,37 +39,32 @@ function s1_goto(timecode)
 end
 
 function s1_loopStart()
-	-- setLoopStart=ALT-NUMPAD1
 	hs.eventtap.keyStroke({ "alt" }, "pad1")
 end
 
 function s1_loopEnd()
-	-- setLoopEnd=ALT-NUMPAD2
 	hs.eventtap.keyStroke({ "alt" }, "pad2")
 end
 
 function s1_selectAllInLoop()
-	-- selectAllInLoop=ALT-L
 	hs.eventtap.keyStroke({"alt"}, "l")
 end
 
 function s1_splitLoop()
-	-- splitLoop=CMD-SHIFT-X
 	hs.eventtap.keyStroke({"cmd", "shift"}, "x")
 end
 
-function s1_setMarker()
-	-- setMarker=Y
-	hs.eventtap.keyStrokes("y")
+function s1_setMarker(name)
+	hs.eventtap.keyStroke({"shift"}, "y")
+	hs.eventtap.keyStrokes(name)
+	hs.eventtap.keyStroke({}, "return")
 end
 
 function standard_copy()
-	-- copy=CMD-C
 	hs.eventtap.keyStroke({"cmd"}, "c", delay)
 end
 
 function standard_paste()
-	-- paste=CMD-V
 	hs.eventtap.keyStroke({"cmd"}, "v", delay)
 end
 
@@ -87,7 +82,7 @@ function s1_apply_move(srcIn, srcOut, destIn, destOut)
 
 	-- copy to new destination
 	s1_goto(destIn)
-	s1_setMarker()
+	s1_setMarker(srcIn)
 	standard_paste()
 
 	-- create marker at end on new range
@@ -98,7 +93,13 @@ end
 function pt_goto(timecode)
 	hs.eventtap.keyStroke({}, "pad*")
 	hs.eventtap.keyStrokes(timecode)
-	hs.eventtap.keyStroke({}, "return")
+	hs.eventtap.keyStroke({}, "padenter")
+end
+
+function pt_setMarker(name)
+	hs.eventtap.keyStroke({}, "padenter")
+	hs.eventtap.keyStrokes(name)
+	hs.eventtap.keyStroke({}, "padenter")
 end
 
 function pt_selectRange(tc_in, tc_out)
@@ -106,14 +107,17 @@ function pt_selectRange(tc_in, tc_out)
 	hs.eventtap.keyStrokes(tc_in)
 	hs.eventtap.keyStroke({"alt"}, "pad/")
 	hs.eventtap.keyStrokes(tc_out)
-	hs.eventtap.keyStroke({}, "return")
+	hs.eventtap.keyStroke({}, "padenter")
 end
 
 function pt_apply_move(srcIn, srcOut, destIn, destOut)
 	pt_selectRange(srcIn, srcOut)
 	standard_copy()
 	pt_goto(destIn)
+	pt_setMarker(srcIn)
 	standard_paste()
+	pt_goto(destOut)
+--	pt_setMarker(srcOut) -- for some reason this messes things up randomly
 end
 
 function choose_vcl()
@@ -125,9 +129,7 @@ function choose_vcl()
 			url = v
 		end
 
-		local file = hs.http.urlParts(url)["fileSystemRepresentation"]
-
-		return file
+		return hs.http.urlParts(url)["fileSystemRepresentation"]
 	else
 		return nil
 	end
@@ -199,6 +201,3 @@ function init()
 end
 
 init()
-
-
-
