@@ -68,6 +68,10 @@ function standard_paste()
 	hs.eventtap.keyStroke({"cmd"}, "v", delay)
 end
 
+function standard_selectAll() 
+	hs.eventtap.keyStroke({"cmd"}, "a")
+end
+
 function s1_apply_move(srcIn, srcOut, destIn, destOut)
 	-- select and split source range
 	s1_goto(srcIn)
@@ -120,6 +124,42 @@ function pt_apply_move(srcIn, srcOut, destIn, destOut)
 --	pt_setMarker(srcOut) -- for some reason this messes things up randomly
 end
 
+function dp_goto(timecode)
+	-- by concidence DP has same goto timecode method as studio one
+	s1_goto(timecode)
+end
+
+function dp_selectRange(tc_in, tc_out)
+	-- select all
+	standard_selectAll()
+	-- goto
+	dp_goto(tc_in)
+	-- set selection start
+	hs.eventtap.keyStroke({}, "f5")
+	-- goto
+	dp_goto(tc_out)
+	-- set selection end
+	hs.eventtap.keyStroke({}, "f6")
+end
+
+function dp_deselectAll()
+	hs.eventtap.keyStroke({"cmd"}, "d")
+end
+
+function dp_setMarker(name)
+	-- Not sure how to set a marker with a name using just the keyboard
+	hs.eventtap.keyStroke({"ctrl"}, "m")
+end
+
+function dp_apply_move(srcIn, srcOut, destIn, destOut)
+	dp_selectRange(srcIn, srcOut)
+	standard_copy()
+	dp_deselectAll()
+	dp_goto(destIn)
+	standard_paste()
+	dp_setMarker(srcIn)
+end
+
 function choose_vcl()
 	local files = hs.dialog.chooseFileOrFolder("Choose Vordio Change List (*.vcl)", default_folder, true, false, false, {"vcl"})
 
@@ -166,7 +206,23 @@ function pt_apply_vcl()
 		pt:activate(false)
 		hs.timer.doAfter(1, function() apply_vcl(file, pt_apply_move) end)
 	end
+end
 
+function dp_apply_vcl()
+	--com.avid.ProTools
+  	local dp = hs.application.find("com.motu.DigitalPerformer")
+
+	if not dp then
+		hs.alert.show("Digital Performer not running")
+		return
+	end
+
+	local file = choose_vcl()
+
+	if file then
+		dp:activate(false)
+		hs.timer.doAfter(1, function() apply_vcl(file, dp_apply_move) end)
+	end
 end
 
 function apply_vcl(file, apply_move_fn)
@@ -194,8 +250,9 @@ function init()
 
 	menu_pt_apply_vcl = { title = "Protools", fn = pt_apply_vcl } 
 	menu_s1_apply_vcl = { title = "Studio One", fn = s1_apply_vcl } 
+	menu_dp_apply_vcl = { title = "Digital Performer", fn = dp_apply_vcl } 
 
-	menu_table = { menu_pt_apply_vcl, menu_s1_apply_vcl }
+	menu_table = { menu_pt_apply_vcl, menu_s1_apply_vcl, menu_dp_apply_vcl }
 
 	menu_change_list:setMenu(menu_table)
 end
