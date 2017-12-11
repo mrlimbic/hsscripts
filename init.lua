@@ -1,6 +1,27 @@
+--[[
+
+Instructions
+
+Navigation:
+
+	NOTE: All positioning is done via timecodes, so project positioning must be set to use frames at correct frame rate
+	Some DAWs require some extra custom key mappings
+
+Key bindings:
+
+	Protools - default keys only
+	StudioOne - default keys only
+	Digital Performer - default keys only
+	
+	Logic Pro X - Map the following keys to actions
+		cmd-shift-c -> "Copy section between locators (Global)"
+		cmd-shift-[ -> "Set Left Locator Numerically"
+		shift-/ 	-> "Go to Position"
+--]]
 
 local default_folder = "~/Desktop"
 local delay = 1000000
+local hourshift = 0
 
 function split(str, pat)
    local t = {}  -- NOTE: use {n = 0} in Lua-5.0
@@ -160,6 +181,43 @@ function dp_apply_move(srcIn, srcOut, destIn, destOut)
 	dp_setMarker(srcIn)
 end
 
+function lp_selectRange(tc_in, tc_out)
+	hs.eventtap.keyStroke({"cmd", "shift"}, "[") -- custom key map
+	hs.eventtap.keyStroke({}, "tab")
+	hs.eventtap.keyStroke({}, "tab")
+	hs.eventtap.keyStrokes(tc_in)
+	hs.eventtap.keyStroke({}, "tab")
+	hs.eventtap.keyStrokes(tc_out)
+	hs.eventtap.keyStroke({}, "return")
+end
+
+function lp_goto(timecode)
+	hs.eventtap.keyStroke({"shift"}, "/") -- custom key map
+	hs.eventtap.keyStroke({}, "tab")
+	hs.eventtap.keyStrokes(timecode)
+	hs.eventtap.keyStroke({}, "return")
+end
+
+function lp_paste()
+	hs.eventtap.keyStroke({"ctrl", "cmd"}, "v", delay)
+end
+
+function lp_setMarker(name)
+	hs.eventtap.keyStroke({"alt"}, "'")
+	hs.eventtap.keyStroke({"shift"}, "'")
+	hs.eventtap.keyStrokes(name)
+	hs.eventtap.keyStroke({}, "return")
+end
+
+function lp_apply_move(srcIn, srcOut, destIn, destOut)
+	lp_selectRange(srcIn, srcOut)
+	hs.eventtap.keyStroke({"cmd", "shift"}, "c", delay)
+	lp_goto(destIn)
+	lp_setMarker(srcIn)
+	hs.eventtap.keyStroke({"ctrl", "cmd"}, "v", delay)
+	hs.eventtap.keyStroke({}, "return", delay) -- just in case it popped up a dialog
+end
+
 function choose_vcl()
 	local files = hs.dialog.chooseFileOrFolder("Choose Vordio Change List (*.vcl)", default_folder, true, false, false, {"vcl"})
 
@@ -175,70 +233,78 @@ function choose_vcl()
 	end
 end
 
-function s1_apply_vcl()
-	local s1 = hs.application.find("com.presonus.studioone2")
+function addHours(timecode, hours)
+	local h = tonumber(string.sub(timecode, 1, 2)) + hours
+	local hh = string.format("%02d", h)
+	return hh .. string.sub(timecode, 3, 11)
+end
 
-	if not s1 then
-		hs.alert.show("Studio One not running")
+function apply_vcl(name, bundle, apply_move_fn)
+	local app = hs.application.find(bundle)
+
+	if not app then
+		hs.alert.show(name .. " not running")
 		return
 	end
 
 	local file = choose_vcl()
 
 	if file then
-		s1:activate(false) -- do we need all windows or just main?
-		hs.timer.doAfter(1, function() apply_vcl(file, s1_apply_move) end)
-	end
-end
+		app:activate(false)
 
-function pt_apply_vcl()
-  	--com.avid.ProTools
-  	local pt = hs.application.find("com.avid.ProTools")
+		hs.timer.doAfter(1, 
+			function() 
+				local moves = {}
 
-	if not pt then
-		hs.alert.show("Protools not running")
-		return
-	end
+				local high_src = nil -- highest source hour
+				local low_dest = nil -- lowest destination hour
 
-	local file = choose_vcl()
+				-- find and analyse all moves in the file
+				for line in io.lines(file) do
+					local words = split(line, "%s+")
 
-	if file then
-		pt:activate(false)
-		hs.timer.doAfter(1, function() apply_vcl(file, pt_apply_move) end)
-	end
-end
+					if words then
+						local command = words[1]
+						if command == "MOVE" then
+							local move = { srcIn = words[2], srcOut = words[3], destIn = words[4], destOut = words[5] }
+							table.insert(moves, move)
 
-function dp_apply_vcl()
-	--com.avid.ProTools
-  	local dp = hs.application.find("com.motu.DigitalPerformer")
+							local s = tonumber(string.sub(move.srcOut, 1, 2))
+							local d = tonumber(string.sub(move.destIn, 1, 2))
 
-	if not dp then
-		hs.alert.show("Digital Performer not running")
-		return
-	end
+							if high_src == nil then
+								high_src = s
+							else
+								if s > high_src then
+									high_src = s
+								end
+							end
 
-	local file = choose_vcl()
+							if low_dest == nil then
+								low_dest = d
+							else
+								if d < low_dest then
+									low_dest = d
+								end
+							end
+						end
+					end
+				end
 
-	if file then
-		dp:activate(false)
-		hs.timer.doAfter(1, function() apply_vcl(file, dp_apply_move) end)
-	end
-end
+				if moves then
+					-- avoid copy/paste conflicts by applying an hour shift if necessary
+					hour_shift = high_src - low_dest + 1
 
-function apply_vcl(file, apply_move_fn)
-	for line in io.lines(file) do
-		local words = split(line, "%s+")
-		if words then
-			local command = words[1]
-			if command == "MOVE" then
-				hs.alert.show(line)
-				srcIn = words[2]
-				srcOut = words[3]
-				destIn = words[4]
-				destOut = words[5]
-				apply_move_fn(srcIn, srcOut, destIn, destOut)
+					hs.alert.show("hour shift = " .. tostring(hour_shift))
+
+					-- now apply all the moves
+					for k, m in pairs(moves) do 
+						-- add hour shift to destination to avoid potential conflicts
+						apply_move_fn(m.srcIn, m.srcOut, addHours(m.destIn, hour_shift), addHours(m.destOut, hour_shift))
+					end
+				end				
 			end
-		end
+		)
 	end
 end                  
 
@@ -248,11 +314,12 @@ function init()
 	menu_change_list = hs.menubar.new()
 	menu_change_list:setTitle("Vordio Change Lists")
 
-	menu_pt_apply_vcl = { title = "Protools", fn = pt_apply_vcl } 
-	menu_s1_apply_vcl = { title = "Studio One", fn = s1_apply_vcl } 
-	menu_dp_apply_vcl = { title = "Digital Performer", fn = dp_apply_vcl } 
+	menu_pt_apply_vcl = { title = "Protools", fn = function() apply_vcl("ProTools", "com.avid.ProTools", pt_apply_move) end } 
+	menu_s1_apply_vcl = { title = "Studio One", fn = function() apply_vcl( "Studio One", "com.presonus.studioone2", s1_apply_move) end  } 
+	menu_dp_apply_vcl = { title = "Digital Performer", fn = function() apply_vcl("Digital Performer", "com.motu.DigitalPerformer", dp_apply_move) end } 
+	menu_lp_apply_vcl = { title = "Logic Pro X", fn = function() apply_vcl("Logic Pro X", "com.apple.logic10", lp_apply_move) end }
 
-	menu_table = { menu_pt_apply_vcl, menu_s1_apply_vcl, menu_dp_apply_vcl }
+	menu_table = { menu_pt_apply_vcl, menu_s1_apply_vcl, menu_dp_apply_vcl, menu_lp_apply_vcl }
 
 	menu_change_list:setMenu(menu_table)
 end
