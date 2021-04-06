@@ -9,7 +9,7 @@ Currently supported DAWs are Protools, Studio One, Digital Performer & Logic Pro
 
 Requires Hammerspoon app http://www.hammerspoon.org/
 
-Requires a VCL file produced by Vordio app http://vordio.net/the-new-compare-function/
+Requires a VCL file produced by Vordio app http://vordio.net/reconform
 
 Load the init.lua file as a configuration file for hammerspooon.
 
